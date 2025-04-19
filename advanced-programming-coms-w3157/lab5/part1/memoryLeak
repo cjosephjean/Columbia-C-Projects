@@ -1,0 +1,1 @@
+valgrind --leak-check=yes ./mdb-lookup-server-nc-2

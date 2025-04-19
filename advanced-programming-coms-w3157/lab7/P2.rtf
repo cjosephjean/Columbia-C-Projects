@@ -1,0 +1,171 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf840
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww13440\viewh9480\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 ---\
+ Makefile      |  8 ++++++-\
+ README.txt    | 15 ++++++------\
+ http-server.c | 76 ++++++++++++++++++++++++++---------------------------------\
+ 3 files changed, 48 insertions(+), 51 deletions(-)\
+\
+diff --git a/Makefile b/Makefile\
+index 8c5900f..8ca0987 100644\
+--- a/Makefile\
++++ b/Makefile\
+@@ -1,9 +1,15 @@\
++http-server: http-server.o\
++	gcc -g http-server.o\
++\
++http-server.o:\
++	gcc -g -Wall http-server.c\
+ \
+ .PHONY:\
+ clean:\
+ 	rm -rf *~\
+ 	rm -rf *.o\
+ 	rm -rf core\
++	rm -rf http-server\
+ \
+ .PHONY:\
+-all: clean\
++all: clean http-server\
+diff --git a/README.txt b/README.txt\
+index 66dfd3e..334b667 100644\
+--- a/README.txt\
++++ b/README.txt\
+@@ -1,11 +1,10 @@\
+ This file should contain:\
+ \
+-  - your name\
+-  - your UNI\
+-  - lab assignment number\
+-  - description for each part\
++  - Andrew Quijano\
++  - afq2101\
++  - Lab #7\
+   \
+-The description should indicate whether your solution for the part is\
+-working or not.  You may also want to include anything else you would\
+-like to communicate to the grader such as extra functionalities you\
+-implemented or how you tried to fix your non-working code.\
++  Part A:\
++  I have set up the web page.\
++\
++  Part B:\
+diff --git a/http-server.c b/http-server.c\
+index ff8f399..a1e5e74 100644\
+--- a/http-server.c\
++++ b/http-server.c\
+@@ -48,7 +48,7 @@ int main(int argc, char **argv)\
+     //HERE I PUT MY OWN IP\
+     //INADDR_ANY, whatever my IP Address is.\
+     servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // any network interface\
+-    servaddr.sin_port = htons(port);\
++    servaddr.sin_port = htons(serverPort);\
+ \
+     // Bind to the local address/Server (Bind to self)\
+     if (bind(servsock, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)\
+@@ -68,12 +68,10 @@ int main(int argc, char **argv)\
+     int clntsock;\
+     socklen_t clntlen;//size of structure\
+     struct sockaddr_in clntaddr;\
++    FILE inputFromClient;\
+ \
+-\
+-    int r;//storing return values\
+-    char buf[4096];\
+-    uint32_t size, size_net, remaining, limit;\
+-    struct stat st;\
++    char buffer[4096];\
++    int r;\
+ \
+     while (1) \
+     \{\
+@@ -90,50 +88,44 @@ int main(int argc, char **argv)\
+         // accept() returned a connected socket (also called client socket)\
+         // and filled in the client's address into clntaddr\
+ \
++        //Wrap the File around the Socket...\
++        inputFromClient = fdopen(sock, "r");\
+ \
+-        fprintf(stderr, "client ip: %s\\n", inet_ntoa(clntaddr.sin_addr));\
+-        //Print into filename...This is how you get filename.0\
+-        sprintf(filename, "%s.%u", filebase, filesuffix++);\
+-        fprintf(stderr, "file name: %s\\n", filename);\
+-\
+-        //Start writing to file\
+-        if ((fp = fopen(filename, "wb")) == NULL)\
+-            die(filename);\
++        //Obtain the HTTP Request\
++        fgets(buffer,sizeof(buffer), input);\
+ \
+-        //Essentially reverse of Client Code...\
+-        // First, receive file size\
++        //Process HTTP Request and Error Check\
++        char *token_seperators = "\\t \\r\\n";//tab, space, new line\
++        char *method = strtok(buffer, token_serpators);\
++        char *requestURI = strtok(NULL, token_seperators);\
++        char *httpVersion = strtok(NULL, token_seperators);\
+ \
+-        r = recv(clntsock, &size_net, sizeof(size_net), MSG_WAITALL);\
+-        if (r != sizeof(size_net)) \
++        //This is NOT a GET Request!\
++        if(strcmp(method,"GET") != 0)\
++        \{\
++            char res1 [] = "HTTP/1.0 501 Not Implemented"\
++            send(sock, res1, sizeof(rest1), 0);\
++            send(sock, "\\r\\t", 2 ,0);\
++            char res2 [] = "<html><body><h1>501 Not Implemented </hi></body></html>";\
++            send(sock, res2, sizeof(res2), 0);\
++        \}\
++        //This is NOT HTTP/1.0\
++        else if(strcmp(buffer, "HTTP/1.0") != 0)\
++        \{\
++            char res[] = "HTTP/1.0";\
++            send(sock, res. sizeof(res), 0);\
++        \}\
++        else if(requestURI[0] != '/')\
++        \{\
++            char res[] = "400 Bad Request";\
++            send(sock, res, sizeof(res), 0);\
++        \}\
++        else if()\
+         \{\
+-            if (r < 0)\
+-                die("recv failed");\
+-            else if (r == 0)\
+-                die("connection closed prematurely");\
+-            else\
+-                die("didn't receive uint32");\
+         \}\
+-        size = ntohl(size_net); // convert it to host byte order\
+-        fprintf(stderr, "file size received: %u\\n", size);\
+-\
+-        // Second, receive the file content\
+ \
+-        remaining = size;\
+         while (remaining > 0) \
+         \{\
+-            //If/Else\
+-            //if remaining > sizeof(buf)\
+-            //then limit = sizeof(buf)\
+-            //else limit = remaining\
+-            //This is if I have like 2,000 bytes not 4,096 bytes.\
+-\
+-            /*\
+-             * You could do MSG_WAITALL\
+-             * But \
+-             * 1- What if file is too big?\
+-             * 2- This is how Jae and most people do things\
+-             *\
+-            */\
+             limit = remaining > sizeof(buf) ? sizeof(buf) : remaining;\
+             //into buffer from client socket\
+             //limit is keeping track of bytes I have left.\
+-- \
+2.7.4\
+\
+}

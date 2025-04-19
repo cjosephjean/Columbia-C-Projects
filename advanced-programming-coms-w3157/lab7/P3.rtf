@@ -1,0 +1,190 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf840
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 ---\
+ http-server.c | 107 +++++++++++++++++++++++++++++++++++++++++++++-------------\
+ 1 file changed, 83 insertions(+), 24 deletions(-)\
+\
+diff --git a/http-server.c b/http-server.c\
+index a1e5e74..89e17ad 100644\
+--- a/http-server.c\
++++ b/http-server.c\
+@@ -14,7 +14,17 @@ code from Jae\
+ #include <sys/types.h>\
+ #include <sys/socket.h>\
+ \
+-static void die(const char *s) \{ perror(s); exit(1); \}\
++static int reply(char *response, const char *IP, const char *get, const char * status)\
++\{\
++    int size = sprintf(response, "%s \\"%s\\" %s", IP, get, status);\
++    return size;\
++\}\
++\
++static void die(const char *s)\
++\{\
++    perror(s); \
++    exit(1); \
++\}\
+ \
+ int main(int argc, char **argv)\
+ \{\
+@@ -26,9 +36,9 @@ int main(int argc, char **argv)\
+     \}\
+ \
+     unsigned short serverPort = atoi(argv[1]);//Convert String to unsigned Short\
+-    const char *webroot = argv[2];\
+-    const char * mdb-lookup-host = argv[3];\
+-    unsigned short mdbPort = atoi(argv[4]);\
++    //const char *webroot = argv[2];\
++    //const char * mdbLookupHost = argv[3];\
++    //unsigned short mdbPort = atoi(argv[4]);\
+ \
+     // Create a listening socket (also called server socket) \
+     // Will be passed to accept() which you can consider as a new child socket\
+@@ -38,7 +48,7 @@ int main(int argc, char **argv)\
+ \
+     // Construct local address structure\
+     // Same way as the Client does it...\
+-    \
++\
+     struct sockaddr_in servaddr;\
+     memset(&servaddr, 0, sizeof(servaddr));\
+     servaddr.sin_family = AF_INET;\
+@@ -66,12 +76,13 @@ int main(int argc, char **argv)\
+ \
+     //Prepare for Client Connection\
+     int clntsock;\
++    int sock;\
+     socklen_t clntlen;//size of structure\
+     struct sockaddr_in clntaddr;\
+-    FILE inputFromClient;\
++    FILE * input;\
+ \
++    char * clientIP;\
+     char buffer[4096];\
+-    int r;\
+ \
+     while (1) \
+     \{\
+@@ -89,41 +100,88 @@ int main(int argc, char **argv)\
+         // and filled in the client's address into clntaddr\
+ \
+         //Wrap the File around the Socket...\
+-        inputFromClient = fdopen(sock, "r");\
++        //Also get the IP\
++        clientIP = inet_ntoa(clntaddr.sin_addr);\
++        input = fdopen(clntsock, "r");\
+ \
+         //Obtain the HTTP Request\
+         fgets(buffer,sizeof(buffer), input);\
+ \
+         //Process HTTP Request and Error Check\
+-        char *token_seperators = "\\t \\r\\n";//tab, space, new line\
+-        char *method = strtok(buffer, token_serpators);\
+-        char *requestURI = strtok(NULL, token_seperators);\
+-        char *httpVersion = strtok(NULL, token_seperators);\
++        char *token_separators = "\\t \\r\\n";//tab, space, new line\
++        char *method = strtok(buffer, token_separators);\
++        char *requestURI = strtok(NULL, token_separators);\
++        char *httpVersion = strtok(NULL, token_separators);\
++        char *response = NULL;\
++        int responseSize = 0;\
++\
++        printf("%s\\n %s\\n %s\\n", method, requestURI, response);\
+ \
+-        //This is NOT a GET Request!\
++//======================This is NOT a GET Request!============================================\
+         if(strcmp(method,"GET") != 0)\
+         \{\
+-            char res1 [] = "HTTP/1.0 501 Not Implemented"\
+-            send(sock, res1, sizeof(rest1), 0);\
+-            send(sock, "\\r\\t", 2 ,0);\
++            char res1 [] = "HTTP/1.0 501 Not Implemented";\
++            send(sock, res1, sizeof(res1), 0);\
++            send(sock, "\\r\\t", sizeof("\\r\\t") ,0);\
+             char res2 [] = "<html><body><h1>501 Not Implemented </hi></body></html>";\
+             send(sock, res2, sizeof(res2), 0);\
++\
++            //Format Standard response\
++            responseSize = reply(response, clientIP, buffer, "501 Not Implemented");\
++            fprintf(stdout, "%s\\n", response);\
++            \
++            //Close Socket, Get the Next Client\
++            fclose(input);\
++            continue;\
+         \}\
+-        //This is NOT HTTP/1.0\
+-        else if(strcmp(buffer, "HTTP/1.0") != 0)\
++//======================This is NOT HTTP/1.0 OR HTTP/1.1=======================================\
++        if(strcmp(httpVersion, "HTTP/1.0") != 0 || strcmp(httpVersion, "HTTP/1.1") != 0)\
+         \{\
+-            char res[] = "HTTP/1.0";\
+-            send(sock, res. sizeof(res), 0);\
++            responseSize = reply(response, clientIP, buffer, "501 Not Implemented");\
++            fprintf(stdout, "%s\\n", response);\
++\
++            //Close the Socket, Get the Next Client\
++            fclose(input);\
++            continue;\
+         \}\
+-        else if(requestURI[0] != '/')\
++//====================FILE URI ERRORS===================================\
++        if(requestURI[0] != '/')\
+         \{\
+-            char res[] = "400 Bad Request";\
+-            send(sock, res, sizeof(res), 0);\
++            responseSize = reply(response, clientIP, buffer, "400 Bad Request");\
++            fprintf(stdout, "%s\\n", response);\
++\
++            //Close the Socket, Get the Next Client\
++            fclose(input);\
++            continue;\
++        \}\
++        //There is a security risk\
++        if(strstr(requestURI, "/../")!= NULL)\
++        \{\
++            responseSize = reply(response, clientIP, buffer, "400 Bad Request");\
++            fprintf(stdout, "%s\\n", response);\
++\
++            //Close the Socket, Get the Next Client\
++            fclose(input);\
++            continue;\
+         \}\
+-        else if()\
++        printf("%lu\\n", strlen(requestURI));\
++        //Check the last 3 chars in fileURI\
++        //if (=='/' && =='.' && requestURI[strlen(buffer)-1]== '.')\
+         \{\
++\
+         \}\
++        //Check if URI only has "/" at the end\
++\
+ \
++        //Check if URI is a directory or NOT\
++\
++        //Does the file even exist?\
++         \
++        //It passed every test...\
++        responseSize = reply(response, clientIP, buffer, "200 OK");\
++        fprintf(stdout, "%s\\n", response);\
++    /*    \
++    \}\
+         while (remaining > 0) \
+         \{\
+             limit = remaining > sizeof(buf) ? sizeof(buf) : remaining;\
+@@ -158,6 +216,7 @@ int main(int argc, char **argv)\
+             die("send size failed");\
+ \
+         // Finally, close the client connection and go back to accept()\
++        */\
+         close(clntsock);\
+     \}\
+ \}\
+-- \
+2.7.4\
+\
+}

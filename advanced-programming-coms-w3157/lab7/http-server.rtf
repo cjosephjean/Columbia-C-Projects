@@ -1,0 +1,178 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf840
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 /*\
+I created http-server based on tcp-recver.c \
+code from Jae\
+*/\
+\
+#include <stdio.h>\
+#include <stdlib.h>\
+#include <string.h>\
+#include <assert.h>\
+#include <unistd.h>\
+#include <sys/wait.h>\
+#include <sys/stat.h>\
+#include <arpa/inet.h>\
+#include <sys/types.h>\
+#include <sys/socket.h>\
+\
+static void die(const char *s) \{ perror(s); exit(1); \}\
+\
+int main(int argc, char **argv)\
+\{\
+    //Error Checking\
+    if (argc != 5) \
+    \{\
+        fprintf(stderr, "usage: %s <server-port> <web_root> <mdb-lookup-host> <mdb-lookup-port>\\n", argv[0]);\
+        exit(1);\
+    \}\
+\
+    unsigned short serverPort = atoi(argv[1]);//Convert String to unsigned Short\
+    const char *webroot = argv[2];\
+    const char * mdb-lookup-host = argv[3];\
+    unsigned short mdbPort = atoi(argv[4]);\
+\
+    // Create a listening socket (also called server socket) \
+    // Will be passed to accept() which you can consider as a new child socket\
+    int servsock;\
+    if ((servsock = socket(AF_INET, SOCK_STREAM, 0)) < 0)\
+        die("socket failed");\
+\
+    // Construct local address structure\
+    // Same way as the Client does it...\
+    \
+    struct sockaddr_in servaddr;\
+    memset(&servaddr, 0, sizeof(servaddr));\
+    servaddr.sin_family = AF_INET;\
+\
+    //CAUTION: LINE IS DIFFERENT\
+    //In Client: you put the IP Address of Server\
+    //HERE I PUT MY OWN IP\
+    //INADDR_ANY, whatever my IP Address is.\
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // any network interface\
+    servaddr.sin_port = htons(port);\
+\
+    // Bind to the local address/Server (Bind to self)\
+    if (bind(servsock, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)\
+        die("bind failed");\
+\
+    // Start listening for incoming connections\
+    // Client can't communicate until Server is Listening. \
+    // Error: Connection Refused.\
+    // Allocate enough memory for 5 pending requests\
+    // Can not server 5 connections at a time...\
+    // 1 is connecting, 4 will wait\
+\
+    if (listen(servsock, 5 /* queue size for connection requests */ ) < 0)\
+        die("listen failed");\
+\
+    //Prepare for Client Connection\
+    int clntsock;\
+    socklen_t clntlen;//size of structure\
+    struct sockaddr_in clntaddr;\
+\
+\
+    int r;//storing return values\
+    char buf[4096];\
+    uint32_t size, size_net, remaining, limit;\
+    struct stat st;\
+\
+    while (1) \
+    \{\
+        // Accept an incoming connection\
+\
+        clntlen = sizeof(clntaddr); // initialize the in-out parameter\
+\
+        //Obtain Client Info\
+        //clntlen will be over-written here\
+        if ((clntsock = accept(servsock,\
+                        (struct sockaddr *) &clntaddr, &clntlen)) < 0)\
+            die("accept failed");\
+\
+        // accept() returned a connected socket (also called client socket)\
+        // and filled in the client's address into clntaddr\
+\
+\
+        fprintf(stderr, "client ip: %s\\n", inet_ntoa(clntaddr.sin_addr));\
+        //Print into filename...This is how you get filename.0\
+        sprintf(filename, "%s.%u", filebase, filesuffix++);\
+        fprintf(stderr, "file name: %s\\n", filename);\
+\
+        //Start writing to file\
+        if ((fp = fopen(filename, "wb")) == NULL)\
+            die(filename);\
+\
+        //Essentially reverse of Client Code...\
+        // First, receive file size\
+\
+        r = recv(clntsock, &size_net, sizeof(size_net), MSG_WAITALL);\
+        if (r != sizeof(size_net)) \
+        \{\
+            if (r < 0)\
+                die("recv failed");\
+            else if (r == 0)\
+                die("connection closed prematurely");\
+            else\
+                die("didn't receive uint32");\
+        \}\
+        size = ntohl(size_net); // convert it to host byte order\
+        fprintf(stderr, "file size received: %u\\n", size);\
+\
+        // Second, receive the file content\
+\
+        remaining = size;\
+        while (remaining > 0) \
+        \{\
+            //If/Else\
+            //if remaining > sizeof(buf)\
+            //then limit = sizeof(buf)\
+            //else limit = remaining\
+            //This is if I have like 2,000 bytes not 4,096 bytes.\
+\
+            /*\
+             * You could do MSG_WAITALL\
+             * But \
+             * 1- What if file is too big?\
+             * 2- This is how Jae and most people do things\
+             *\
+            */\
+            limit = remaining > sizeof(buf) ? sizeof(buf) : remaining;\
+            //into buffer from client socket\
+            //limit is keeping track of bytes I have left.\
+            r = recv(clntsock, buf, limit, 0);\
+            if (r < 0)\
+                die("recv failed");\
+            else if (r == 0)\
+                die("connection closed prematurely");\
+            else \
+            \{\
+                remaining -= r;\
+                //Write to file from buffer\
+                if (fwrite(buf, 1, r, fp) != r) \
+                    die("fwrite failed");\
+            \}\
+        \}\
+        assert(remaining == 0);\
+        fclose(fp);\
+\
+        // Third, send the file size back as acknowledgement\
+\
+        stat(filename, &st);\
+        size = st.st_size;//Recalculating File Size I just wrote\
+\
+        fprintf(stderr, "file size on disk:  %u\\n\\n", size);\
+        size_net = htonl(size);\
+\
+        if (send(clntsock, &size_net, sizeof(size_net), 0) \
+                != sizeof(size_net))\
+            die("send size failed");\
+\
+        // Finally, close the client connection and go back to accept()\
+        close(clntsock);\
+    \}\
+\}}
